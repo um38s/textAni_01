@@ -271,8 +271,8 @@ recBtn.addEventListener('click', () => {
         // ── START ──
         recordedChunks = [];
 
-        // Capture canvas stream at 60 fps
-        const stream = canvas.captureStream(60);
+        // Capture canvas stream at the optimized browser rendering rate
+        const stream = canvas.captureStream();
 
         // Pick the best supported codec
         const mimeType = [

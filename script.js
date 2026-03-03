@@ -219,9 +219,9 @@ function spawnCharacter(char) {
 let frameCount = 0;
 
 function animate() {
-    // Fill with white gradient background (same as CSS) so recording isn't black
+    // Fill with pure white background so recording is solid white
     ctx.globalAlpha = 1;
-    ctx.fillStyle = bgGradient || '#fdfdfd';
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, width, height);
 
     frameCount++;

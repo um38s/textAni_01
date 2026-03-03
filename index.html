@@ -15,10 +15,15 @@
     <div class="frame-container">
         <canvas id="artCanvas"></canvas>
         <div class="intro-text" id="introText">Type something...</div>
-        <!-- Hidden input to capture keyboard on all devices easily -->
         <input type="text" id="hiddenInput" autocomplete="off" autocorrect="off" autocapitalize="off"
             spellcheck="false">
     </div>
+
+    <!-- Recording button -->
+    <button id="recBtn" title="Start / Stop Recording">
+        <span class="rec-dot"></span>
+        <span class="rec-label">REC</span>
+    </button>
 
     <script src="script.js"></script>
 </body>

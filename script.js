@@ -248,3 +248,58 @@ function animate() {
 // Start
 input.focus();
 animate();
+
+// ── Canvas Recording ───────────────────────────────────────────────────────
+const recBtn = document.getElementById('recBtn');
+const recLabel = recBtn.querySelector('.rec-label');
+
+let mediaRecorder = null;
+let recordedChunks = [];
+
+recBtn.addEventListener('click', () => {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        // ── STOP ──
+        mediaRecorder.stop();
+    } else {
+        // ── START ──
+        recordedChunks = [];
+
+        // Capture canvas stream at 60 fps
+        const stream = canvas.captureStream(60);
+
+        // Pick the best supported codec
+        const mimeType = [
+            'video/webm;codecs=vp9',
+            'video/webm;codecs=vp8',
+            'video/webm'
+        ].find(m => MediaRecorder.isTypeSupported(m)) || '';
+
+        mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+
+        mediaRecorder.addEventListener('dataavailable', (e) => {
+            if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+        });
+
+        mediaRecorder.addEventListener('stop', () => {
+            // Build blob and trigger download
+            const blob = new Blob(recordedChunks, { type: mimeType || 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            a.href = url;
+            a.download = `media-art_${ts}.webm`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+            // Reset button state
+            recBtn.classList.remove('recording');
+            recLabel.textContent = 'REC';
+            mediaRecorder = null;
+        });
+
+        mediaRecorder.start();
+        recBtn.classList.add('recording');
+        recLabel.textContent = 'STOP';
+    }
+});
+

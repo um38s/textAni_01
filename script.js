@@ -281,7 +281,13 @@ recBtn.addEventListener('click', () => {
             'video/webm'
         ].find(m => MediaRecorder.isTypeSupported(m)) || '';
 
-        mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+        // Force high bitrate (8 Mbps) to avoid compression blocks at 60fps
+        const options = {
+            mimeType: mimeType || undefined,
+            videoBitsPerSecond: 8000000
+        };
+
+        mediaRecorder = new MediaRecorder(stream, options);
 
         mediaRecorder.addEventListener('dataavailable', (e) => {
             if (e.data && e.data.size > 0) recordedChunks.push(e.data);

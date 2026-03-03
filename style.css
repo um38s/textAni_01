@@ -1,0 +1,74 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background-color: #1a1a1a;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: 'Playfair Display', serif;
+    /* Serif font as requested */
+    overflow: hidden;
+}
+
+.frame-container {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    background: linear-gradient(135deg, #fdfdfd 0%, #e6e6e6 100%);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+    cursor: text;
+}
+
+@media (min-aspect-ratio: 9/16) {
+    .frame-container {
+        width: 56.25vh;
+        /* 16:9 ratio (100vh * 9/16) */
+        height: 100vh;
+    }
+}
+
+@media (max-aspect-ratio: 9/16) {
+    .frame-container {
+        width: 100vw;
+        height: 177.77vw;
+        /* 100vw * 16/9 */
+    }
+}
+
+canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 10;
+}
+
+#hiddenInput {
+    position: absolute;
+    opacity: 0;
+    top: -1000px;
+    left: -1000px;
+    z-index: 0;
+}
+
+.intro-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.5rem;
+    color: rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+    z-index: 5;
+    transition: opacity 0.5s ease;
+    text-align: center;
+    font-style: italic;
+}

@@ -21,13 +21,19 @@ const config = {
 const glyphCache = new Map();
 
 // ── Resize ─────────────────────────────────────────────────────────────────
+let bgGradient = null; // cached background gradient
+
 function resize() {
     width = container.clientWidth;
     height = container.clientHeight;
     canvas.width = width;
     canvas.height = height;
     config.baseFontSize = Math.max(28, height * 0.08);
-    glyphCache.clear(); // clear cached glyphs on resize (sizes change)
+    glyphCache.clear();
+    // Recreate gradient to match CSS background (135deg, #fdfdfd → #e6e6e6)
+    bgGradient = ctx.createLinearGradient(0, 0, width, height);
+    bgGradient.addColorStop(0, '#fdfdfd');
+    bgGradient.addColorStop(1, '#e6e6e6');
 }
 window.addEventListener('resize', resize);
 resize();
@@ -213,9 +219,10 @@ function spawnCharacter(char) {
 let frameCount = 0;
 
 function animate() {
-    // Clear canvas with globalAlpha guaranteed reset
+    // Fill with white gradient background (same as CSS) so recording isn't black
     ctx.globalAlpha = 1;
-    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = bgGradient || '#fdfdfd';
+    ctx.fillRect(0, 0, width, height);
 
     frameCount++;
 

@@ -1,50 +1,40 @@
+'use strict';
+
+// ── DOM Elements ───────────────────────────────────────────────────────────
 const canvas = document.getElementById('artCanvas');
 const ctx = canvas.getContext('2d');
 const input = document.getElementById('hiddenInput');
-const introText = document.getElementById('introText');
+const typedTextEl = document.getElementById('typedText');
 const container = document.querySelector('.frame-container');
 
 let width, height;
 let particles = [];
-let textString = "";
+let cachedFragCount = 0;
 
 const config = {
     fontFamily: '"Playfair Display", serif',
     baseFontSize: 60,
     baseGravity: 0.055,
     friction: 0.97,
-    maxFragments: 420,
+    maxFragments: 630,      // 420 × 1.5
     fragChars: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 };
 
-// ── Glyph Cache — must be declared before resize() uses it ───────────────
+// ── Glyph Cache ────────────────────────────────────────────────────────────
 const glyphCache = new Map();
+const GLYPH_CACHE_LIMIT = 256;
 
-// ── Resize ─────────────────────────────────────────────────────────────────
-let bgGradient = null; // cached background gradient
-
-function resize() {
-    width = container.clientWidth;
-    height = container.clientHeight;
-    canvas.width = width;
-    canvas.height = height;
-    config.baseFontSize = Math.max(28, height * 0.08);
-    glyphCache.clear();
-    // Recreate gradient to match CSS background (135deg, #fdfdfd → #e6e6e6)
-    bgGradient = ctx.createLinearGradient(0, 0, width, height);
-    bgGradient.addColorStop(0, '#fdfdfd');
-    bgGradient.addColorStop(1, '#e6e6e6');
-}
-window.addEventListener('resize', resize);
-resize();
-
-function randomFragChar() {
-    return config.fragChars[Math.floor(Math.random() * config.fragChars.length)];
-}
 function getGlyph(char, sizeFloat) {
     const size = Math.max(1, Math.round(sizeFloat));
     const key = char + '_' + size;
     if (glyphCache.has(key)) return glyphCache.get(key);
+
+    // Evict oldest entries when cache is full
+    if (glyphCache.size >= GLYPH_CACHE_LIMIT) {
+        const firstKey = glyphCache.keys().next().value;
+        glyphCache.delete(firstKey);
+    }
+
     const pad = Math.ceil(size * 0.8);
     const dim = size * 2 + pad * 2;
     const gc = document.createElement('canvas');
@@ -59,6 +49,26 @@ function getGlyph(char, sizeFloat) {
     glyphCache.set(key, gc);
     return gc;
 }
+
+function randomFragChar() {
+    return config.fragChars[(Math.random() * 26) | 0];
+}
+
+// ── Resize ─────────────────────────────────────────────────────────────────
+let resizeTimer;
+function resize() {
+    width = container.clientWidth;
+    height = container.clientHeight;
+    canvas.width = width;
+    canvas.height = height;
+    config.baseFontSize = Math.max(28, height * 0.08);
+    glyphCache.clear();
+}
+window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resize, 150);
+}, { passive: true });
+resize();
 
 // ── Particle ───────────────────────────────────────────────────────────────
 class Particle {
@@ -81,9 +91,8 @@ class Particle {
             this.vx = 0;
             this.vy = 0;
             this.opacity = 1;
-            // Falling speed: current was 60-80% → now an additional 60-80% = net 36-64% of baseGravity
-            this.gravityScale = Math.random() * 0.28 + 0.36; // 36–64%
-            this.rotationSpeed = (Math.random() - 0.5) * 0.0164; // +20% from 0.0137
+            this.gravityScale = Math.random() * 0.28 + 0.36;
+            this.rotationSpeed = (Math.random() - 0.5) * 0.0164;
         }
 
         this.rotation = (Math.random() - 0.5) * 0.4;
@@ -97,8 +106,8 @@ class Particle {
             this.vy += config.baseGravity * this.gravityScale;
             this.vx *= config.friction;
 
-            // Trail spawn (budget-gated)
-            if (Math.random() > 0.65 && cachedFragCount < config.maxFragments) {
+            // Trail spawn (budget-gated, 45% chance → 1.5x more trails)
+            if (Math.random() > 0.55 && cachedFragCount < config.maxFragments) {
                 const spread = this.size * 0.3;
                 particles.push(new Particle(
                     randomFragChar(),
@@ -128,25 +137,22 @@ class Particle {
         this.y += this.vy;
     }
 
-    // Draw fragment using cached glyph (fast drawImage path)
     drawFragment() {
         if (this.opacity <= 0) return;
-        const size = Math.max(1, Math.round(this.size));
-        const gc = getGlyph(this.char, size);
-        const half = gc.width / 2;
+        const gc = getGlyph(this.char, this.size);
+        const half = gc.width >> 1;
         ctx.save();
-        ctx.globalAlpha = Math.min(0.95, Math.max(0, this.opacity));
+        ctx.globalAlpha = Math.min(0.95, this.opacity);
         ctx.translate(this.x, this.y);
         ctx.rotate(this.rotation);
         ctx.drawImage(gc, -half, -half);
         ctx.restore();
     }
 
-    // Draw main character using fillText
     drawMain() {
         if (this.opacity <= 0) return;
         ctx.save();
-        ctx.globalAlpha = Math.max(0, this.opacity);
+        ctx.globalAlpha = this.opacity;
         ctx.translate(this.x, this.y);
         ctx.rotate(this.rotation);
         ctx.font = `${Math.round(this.size)}px ${config.fontFamily}`;
@@ -165,27 +171,57 @@ class Particle {
     }
 }
 
-let cachedFragCount = 0;
+// ── Typing Display ─────────────────────────────────────────────────────────
+function addCharToDisplay(char) {
+    const charSpan = document.createElement('span');
+    charSpan.className = 'typed-char';
+    charSpan.textContent = char;
+    typedTextEl.appendChild(charSpan);
 
-// ── Input: document-level keydown (works without clicking first) ───────────
+    setTimeout(() => {
+        charSpan.classList.add('fading');
+        setTimeout(() => {
+            if (charSpan.parentNode) charSpan.parentNode.removeChild(charSpan);
+        }, 1500);
+    }, 1000);
+}
+
+function handleBackspace() {
+    const chars = typedTextEl.querySelectorAll('.typed-char:not(.fading)');
+    if (chars.length > 0) {
+        const last = chars[chars.length - 1];
+        last.classList.add('fading');
+        setTimeout(() => {
+            if (last.parentNode) last.parentNode.removeChild(last);
+        }, 1500);
+    }
+}
+
+// ── Input ──────────────────────────────────────────────────────────────────
 document.addEventListener('keydown', (e) => {
-    if (e.key.length !== 1) return;
     if (e.ctrlKey || e.altKey || e.metaKey) return;
-    // Prevent key from also being inserted into hiddenInput (which would fire input event → double spawn)
+
+    if (e.key === 'Backspace') {
+        e.preventDefault();
+        handleBackspace();
+        return;
+    }
+
+    if (e.key.length !== 1) return;
     e.preventDefault();
-    if (introText.style.opacity !== '0') introText.style.opacity = '0';
-    spawnCharacter(e.key);
+
+    addCharToDisplay(e.key);
+    if (e.key !== ' ') spawnCharacter(e.key);
 });
 
-// Mobile fallback: touch → focus hidden input → on-screen keyboard → input event
-container.addEventListener('click', () => { input.focus(); });
-container.addEventListener('touchstart', () => { input.focus(); }, { passive: true });
+// Mobile fallback
+container.addEventListener('click', () => input.focus());
+container.addEventListener('touchstart', () => input.focus(), { passive: true });
 input.addEventListener('input', (e) => {
-    // Only fires on mobile (desktop keydown's preventDefault blocks it)
     const val = e.target.value;
     for (const ch of val) {
-        if (introText.style.opacity !== '0') introText.style.opacity = '0';
-        spawnCharacter(ch);
+        addCharToDisplay(ch);
+        if (ch !== ' ') spawnCharacter(ch);
     }
     e.target.value = '';
 });
@@ -200,8 +236,9 @@ function spawnCharacter(char) {
 
     particles.push(new Particle(char, spawnX, spawnY, false, charSize));
 
+    // 1.5x fragments: was 14–42, now 21–63
     const budget = Math.max(0, config.maxFragments - cachedFragCount);
-    const numFrags = Math.min(Math.floor(Math.random() * 28) + 14, budget);
+    const numFrags = Math.min(Math.floor(Math.random() * 42) + 21, budget);
     const spread = charSize * 0.8;
 
     for (let i = 0; i < numFrags; i++) {
@@ -219,100 +256,210 @@ function spawnCharacter(char) {
 let frameCount = 0;
 
 function animate() {
-    // Fill with pure white background so recording is solid white
     ctx.globalAlpha = 1;
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, width, height);
 
     frameCount++;
 
-    // Purge dead particles every 5 frames
-    if (frameCount % 5 === 0) {
-        particles = particles.filter(p => !p.isDead());
+    // Purge dead particles every 8 frames (less frequent = smoother)
+    if (frameCount % 8 === 0) {
+        let writeIdx = 0;
         cachedFragCount = 0;
         for (let i = 0; i < particles.length; i++) {
-            if (particles[i].isFragment) cachedFragCount++;
+            if (!particles[i].isDead()) {
+                particles[writeIdx++] = particles[i];
+                if (particles[i].isFragment) cachedFragCount++;
+            }
         }
+        particles.length = writeIdx;
     }
 
-    // Single pass: update all, then draw fragments, then draw mains
-    // (two-pass draw ensures mains always appear on top)
-    for (let i = 0; i < particles.length; i++) {
+    // Update all
+    for (let i = 0, len = particles.length; i < len; i++) {
         particles[i].update();
     }
-    // Pass 1 – fragments (behind)
-    for (let i = 0; i < particles.length; i++) {
+    // Draw fragments (behind)
+    for (let i = 0, len = particles.length; i < len; i++) {
         if (particles[i].isFragment) particles[i].drawFragment();
     }
-    // Pass 2 – main chars (in front)
-    for (let i = 0; i < particles.length; i++) {
+    // Draw main chars (in front)
+    for (let i = 0, len = particles.length; i < len; i++) {
         if (!particles[i].isFragment) particles[i].drawMain();
     }
 
     requestAnimationFrame(animate);
 }
 
-// Start
+// ── Start ──────────────────────────────────────────────────────────────────
 input.focus();
 animate();
 
-// ── Canvas Recording ───────────────────────────────────────────────────────
+// ── MP4 Recording (WebCodecs + mp4-muxer + overlay compositing) ────────────
 const recBtn = document.getElementById('recBtn');
 const recLabel = recBtn.querySelector('.rec-label');
 
-let mediaRecorder = null;
-let recordedChunks = [];
+let mp4Recording = false;
+let mp4Encoder = null;
+let mp4Muxer = null;
+let mp4FrameTimer = null;
+let mp4FrameIndex = 0;
 
-recBtn.addEventListener('click', () => {
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
+const REC_FPS = 30;
+const REC_BITRATE = 16_000_000; // 16 Mbps
+
+// Offscreen canvas for compositing art + overlay
+let recCanvas = null;
+let recCtx = null;
+
+/**
+ * Draw DOM overlay elements (TRY TYPING, typed chars, cursor)
+ * onto the recording canvas using exact DOM positions.
+ */
+function drawOverlay(rCtx, w, h) {
+    const containerRect = container.getBoundingClientRect();
+    const scaleX = w / containerRect.width;
+    const scaleY = h / containerRect.height;
+
+    rCtx.save();
+
+    // "TRY TYPING" prompt
+    const prompt = document.getElementById('typingPrompt');
+    const promptRect = prompt.getBoundingClientRect();
+    const promptFs = parseFloat(getComputedStyle(prompt).fontSize) * scaleY;
+    rCtx.font = `300 ${promptFs}px Inter, sans-serif`;
+    rCtx.fillStyle = 'rgba(150, 150, 150, 0.8)';
+    rCtx.textAlign = 'center';
+    rCtx.textBaseline = 'middle';
+    const px = (promptRect.left - containerRect.left + promptRect.width / 2) * scaleX;
+    const py = (promptRect.top - containerRect.top + promptRect.height / 2) * scaleY;
+    rCtx.fillText('TRY TYPING', px, py);
+
+    // Typed characters (each with its own fade opacity)
+    const chars = typedTextEl.querySelectorAll('.typed-char');
+    chars.forEach(ch => {
+        const r = ch.getBoundingClientRect();
+        const fs = parseFloat(getComputedStyle(ch).fontSize) * scaleY;
+        const op = parseFloat(getComputedStyle(ch).opacity);
+        if (op <= 0) return;
+
+        rCtx.globalAlpha = op;
+        rCtx.font = `400 ${fs}px "Playfair Display", serif`;
+        rCtx.fillStyle = 'rgba(10, 10, 10, 0.85)';
+        rCtx.textAlign = 'center';
+        rCtx.textBaseline = 'middle';
+        const cx = (r.left - containerRect.left + r.width / 2) * scaleX;
+        const cy = (r.top - containerRect.top + r.height / 2) * scaleY;
+        rCtx.fillText(ch.textContent, cx, cy);
+    });
+
+    // Blinking cursor
+    const cursor = document.getElementById('blinkCursor');
+    const cursorRect = cursor.getBoundingClientRect();
+    const cursorOp = parseFloat(getComputedStyle(cursor).opacity);
+    if (cursorOp > 0) {
+        const cFs = parseFloat(getComputedStyle(cursor).fontSize) * scaleY;
+        rCtx.globalAlpha = cursorOp;
+        rCtx.font = `300 ${cFs}px Inter, sans-serif`;
+        rCtx.fillStyle = 'rgba(10, 10, 10, 0.4)';
+        rCtx.textAlign = 'center';
+        rCtx.textBaseline = 'middle';
+        const ccx = (cursorRect.left - containerRect.left + cursorRect.width / 2) * scaleX;
+        const ccy = (cursorRect.top - containerRect.top + cursorRect.height / 2) * scaleY;
+        rCtx.fillText('|', ccx, ccy);
+    }
+
+    rCtx.restore();
+}
+
+recBtn.addEventListener('click', async () => {
+    if (mp4Recording) {
         // ── STOP ──
-        mediaRecorder.stop();
+        mp4Recording = false;
+        clearInterval(mp4FrameTimer);
+
+        await mp4Encoder.flush();
+        mp4Encoder.close();
+
+        mp4Muxer.finalize();
+        const buffer = mp4Muxer.target.buffer;
+
+        const blob = new Blob([buffer], { type: 'video/mp4' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        a.href = url;
+        a.download = `media-art_${ts}.mp4`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+        recBtn.classList.remove('recording');
+        recLabel.textContent = 'REC';
+        mp4Encoder = null;
+        mp4Muxer = null;
+        recCanvas = null;
+        recCtx = null;
     } else {
         // ── START ──
-        recordedChunks = [];
+        // Ensure even dimensions (H.264 requirement)
+        const w = canvas.width % 2 === 0 ? canvas.width : canvas.width - 1;
+        const h = canvas.height % 2 === 0 ? canvas.height : canvas.height - 1;
 
-        // Capture canvas stream at the optimized browser rendering rate
-        const stream = canvas.captureStream();
+        // Offscreen canvas for compositing
+        recCanvas = document.createElement('canvas');
+        recCanvas.width = w;
+        recCanvas.height = h;
+        recCtx = recCanvas.getContext('2d');
 
-        // Pick the best supported codec
-        const mimeType = [
-            'video/webm;codecs=vp9',
-            'video/webm;codecs=vp8',
-            'video/webm'
-        ].find(m => MediaRecorder.isTypeSupported(m)) || '';
-
-        // Force high bitrate (8 Mbps) to avoid compression blocks at 60fps
-        const options = {
-            mimeType: mimeType || undefined,
-            videoBitsPerSecond: 8000000
-        };
-
-        mediaRecorder = new MediaRecorder(stream, options);
-
-        mediaRecorder.addEventListener('dataavailable', (e) => {
-            if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+        mp4Muxer = new Mp4Muxer.Muxer({
+            target: new Mp4Muxer.ArrayBufferTarget(),
+            video: {
+                codec: 'avc',
+                width: w,
+                height: h
+            },
+            fastStart: 'in-memory'
         });
 
-        mediaRecorder.addEventListener('stop', () => {
-            // Build blob and trigger download
-            const blob = new Blob(recordedChunks, { type: mimeType || 'video/webm' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-            a.href = url;
-            a.download = `media-art_${ts}.webm`;
-            a.click();
-            setTimeout(() => URL.revokeObjectURL(url), 10000);
-
-            // Reset button state
-            recBtn.classList.remove('recording');
-            recLabel.textContent = 'REC';
-            mediaRecorder = null;
+        mp4Encoder = new VideoEncoder({
+            output: (chunk, meta) => {
+                mp4Muxer.addVideoChunk(chunk, meta);
+            },
+            error: (e) => console.error('VideoEncoder error:', e)
         });
 
-        mediaRecorder.start();
+        mp4Encoder.configure({
+            codec: 'avc1.42001f',   // H.264 Baseline Level 3.1
+            width: w,
+            height: h,
+            bitrate: REC_BITRATE,
+            framerate: REC_FPS
+        });
+
+        mp4FrameIndex = 0;
+        mp4Recording = true;
+        const frameDuration = 1_000_000 / REC_FPS; // microseconds
+
+        mp4FrameTimer = setInterval(() => {
+            if (!mp4Recording) return;
+
+            // Composite: art canvas + DOM overlay
+            recCtx.clearRect(0, 0, w, h);
+            recCtx.drawImage(canvas, 0, 0, w, h);
+            drawOverlay(recCtx, w, h);
+
+            const frame = new VideoFrame(recCanvas, {
+                timestamp: mp4FrameIndex * frameDuration
+            });
+
+            // Keyframe every 2 seconds for smooth seeking in Premiere
+            const keyFrame = mp4FrameIndex % (REC_FPS * 2) === 0;
+            mp4Encoder.encode(frame, { keyFrame });
+            frame.close();
+            mp4FrameIndex++;
+        }, 1000 / REC_FPS);
+
         recBtn.classList.add('recording');
         recLabel.textContent = 'STOP';
     }
 });
-
